@@ -1,16 +1,23 @@
 # Denoiser Service Dependencies
+# Note: setuptools + wheel are pre-installed in Dockerfile
+# Note: resemble-enhance installed with --no-deps in Dockerfile (strict torch==2.1.1 pin)
+
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 python-multipart==0.0.*
 
-# Audio Enhancement
-resemble-enhance==0.0.*
-
-# Audio Processing
-soundfile==0.13.*
-numpy>=1.26
+# resemble-enhance runtime dependencies (manually managed)
 torch>=2.5
 torchaudio>=2.5
+soundfile==0.12.1
+numpy>=1.26
+scipy>=1.11
+tabulate>=0.9
+rich>=13.0
+
+# Audio Processing
+librosa>=0.10
+noisereduce>=3.0
 
 # Utilities
 loguru==0.7.*

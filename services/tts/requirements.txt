@@ -1,19 +1,14 @@
 # TTS Service Dependencies
+# Note: setuptools + wheel are pre-installed in Dockerfile
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 python-multipart==0.0.*
-
-# Build Tools (must be first)
-wheel>=0.42
-setuptools>=70
 
 # PyTorch (pre-built wheels to avoid compilation)
 torch>=2.5
 torchaudio>=2.5
 
-# Coqui TTS (XTTS-v2)
-TTS==0.22.*
-
+# Coqui TTS installed separately in Dockerfile (--no-build-isolation)
 # Audio
 soundfile==0.13.*
 numpy>=1.26

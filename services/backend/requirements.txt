@@ -1,4 +1,6 @@
 # Backend — Python Dependencies
+# Note: setuptools + wheel are pre-installed in Dockerfile
+
 fastapi==0.115.*
 uvicorn[standard]==0.34.*
 httpx==0.28.*
@@ -6,13 +8,15 @@ python-multipart==0.0.*
 pydantic==2.*
 pydantic-settings==2.*
 
+# PyTorch (pre-built wheels)
+torch>=2.5
+torchaudio>=2.5
+
 # Embedding
 sentence-transformers==3.*
-torch>=2.5
 
-# Whisper STT
+# Whisper STT — faster-whisper is the primary backend (openai-whisper removed: Python 3.12 incompatible)
 faster-whisper==1.*
-openai-whisper==20240930
 
 # RAG / Text Processing
 langchain==0.3.*
