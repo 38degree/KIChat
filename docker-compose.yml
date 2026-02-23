@@ -1,0 +1,292 @@
+# ============================================================
+# Psychiatrische KI-Plattform — Docker Compose
+# NVIDIA DGX Spark (GB10 Blackwell, 128GB Unified Memory)
+# ============================================================
+#
+# Architektur:
+#   open-webui → backend (FastAPI) → vllm (LLM + Reasoning)
+#                                   → qdrant (RAG Vektoren)
+#                                   → tts (Sprachausgabe)
+#                                   → denoiser (Audio-Bereinigung)
+#                                   → ocr (PDF/Gerichtsakten)
+#
+# Start: docker compose up -d
+# Logs:  docker compose logs -f backend
+# Stop:  docker compose down
+
+services:
+  # ==========================================================
+  # vLLM — LLM Inference Server (Qwen 2.5 72B FP4)
+  # ==========================================================
+  vllm:
+    image: vllm/vllm-openai:latest
+    platform: linux/arm64
+    container_name: psych-vllm
+    restart: unless-stopped
+    ports:
+      - "${LLM_PORT:-8000}:8000"
+    volumes:
+      - ./models/llm:/models/llm
+      - huggingface_cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HOME=/root/.cache/huggingface
+      - VLLM_ENABLE_PREFIX_CACHING=${VLLM_ENABLE_PREFIX_CACHING:-true}
+    command: >
+      --model ${LLM_MODEL:-Qwen/Qwen2.5-72B-Instruct}
+      --host 0.0.0.0
+      --port 8000
+      --tensor-parallel-size ${LLM_TENSOR_PARALLEL_SIZE:-1}
+      --max-model-len ${LLM_MAX_MODEL_LEN:-8192}
+      --gpu-memory-utilization ${LLM_GPU_MEMORY_UTILIZATION:-0.45}
+      --quantization ${LLM_QUANTIZATION:-fp4}
+      --dtype auto
+      --trust-remote-code
+      --enable-prefix-caching
+      --disable-log-requests
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # Qdrant — Vektordatenbank für RAG
+  # ==========================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: psych-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - ./data/vectordb:/qdrant/storage
+      - ./services/qdrant/config.yaml:/qdrant/config/production.yaml:ro
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # Backend — FastAPI Orchestration (RAG, Audio, OCR Routing)
+  # ==========================================================
+  backend:
+    build:
+      context: ./services/backend
+      dockerfile: Dockerfile
+    container_name: psych-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - ./models:/models:ro
+      - ./data:/data
+      - huggingface_cache:/root/.cache/huggingface
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HOME=/root/.cache/huggingface
+      - LLM_BASE_URL=http://vllm:8000/v1
+      - LLM_MODEL=${LLM_MODEL:-Qwen/Qwen2.5-72B-Instruct}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-psychiatric_knowledge}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-intfloat/multilingual-e5-large}
+      - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-cpu}
+      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-32}
+      - STT_MODEL=${STT_MODEL:-openai/whisper-large-v3}
+      - STT_LANGUAGE=${STT_LANGUAGE:-de}
+      - STT_DEVICE=${STT_DEVICE:-cuda}
+      - TTS_SERVICE_URL=http://tts:8001
+      - DENOISER_SERVICE_URL=http://denoiser:8002
+      - OCR_SERVICE_URL=http://ocr:8003
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-512}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-64}
+      - RAG_TOP_K=${RAG_TOP_K:-5}
+      - RAG_SIMILARITY_THRESHOLD=${RAG_SIMILARITY_THRESHOLD:-0.7}
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8080
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      vllm:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # TTS — XTTS-v2 Sprachausgabe
+  # ==========================================================
+  tts:
+    build:
+      context: ./services/tts
+      dockerfile: Dockerfile
+    container_name: psych-tts
+    restart: unless-stopped
+    ports:
+      - "${TTS_PORT:-8001}:8001"
+    volumes:
+      - ./models/tts:/models/tts
+      - huggingface_cache:/root/.cache/huggingface
+    environment:
+      - TTS_MODEL=${TTS_MODEL:-tts_models/multilingual/multi-dataset/xtts_v2}
+      - TTS_LANGUAGE=${TTS_LANGUAGE:-de}
+      - TTS_HOST=0.0.0.0
+      - TTS_PORT=8001
+      - TTS_DEVICE=${TTS_DEVICE:-cuda}
+      - HF_HOME=/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # Denoiser — Resemble Enhance Audio-Bereinigung
+  # ==========================================================
+  denoiser:
+    build:
+      context: ./services/denoiser
+      dockerfile: Dockerfile
+    container_name: psych-denoiser
+    restart: unless-stopped
+    ports:
+      - "${DENOISER_PORT:-8002}:8002"
+    volumes:
+      - ./models/denoiser:/models/denoiser
+    environment:
+      - DENOISER_HOST=0.0.0.0
+      - DENOISER_PORT=8002
+      - DENOISER_DEVICE=${DENOISER_DEVICE:-cuda}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # OCR — Surya + marker-pdf für Gerichtsakten
+  # ==========================================================
+  ocr:
+    build:
+      context: ./services/ocr
+      dockerfile: Dockerfile
+    container_name: psych-ocr
+    restart: unless-stopped
+    ports:
+      - "${OCR_PORT:-8003}:8003"
+    volumes:
+      - ./models/ocr:/models/ocr
+      - ./data/documents:/data/documents
+    environment:
+      - OCR_HOST=0.0.0.0
+      - OCR_PORT=8003
+      - OCR_BATCH_SIZE=${OCR_BATCH_SIZE:-64}
+      - OCR_DEVICE=${OCR_DEVICE:-cuda}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    networks:
+      - psych-net
+
+  # ==========================================================
+  # Open WebUI — Chat-Oberfläche
+  # ==========================================================
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: psych-webui
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-3000}:8080"
+    volumes:
+      - ./data/webui:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URLS=http://backend:8080/v1
+      - OPENAI_API_KEYS=sk-placeholder
+      - WEBUI_AUTH=false
+      - ENABLE_SIGNUP=false
+      - DEFAULT_MODELS=${LLM_MODEL:-Qwen/Qwen2.5-72B-Instruct}
+      - AUDIO_STT_ENGINE=openai
+      - AUDIO_STT_OPENAI_API_BASE_URL=http://backend:8080/v1
+      - AUDIO_STT_OPENAI_API_KEY=sk-placeholder
+      - AUDIO_TTS_ENGINE=openai
+      - AUDIO_TTS_OPENAI_API_BASE_URL=http://backend:8080/v1
+      - AUDIO_TTS_OPENAI_API_KEY=sk-placeholder
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - psych-net
+
+networks:
+  psych-net:
+    driver: bridge
+
+volumes:
+  huggingface_cache:
+    driver: local

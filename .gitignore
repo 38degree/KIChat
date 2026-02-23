@@ -1,0 +1,27 @@
+# Psychiatrische KI-Plattform dependencies
+models/
+data/
+*.pyc
+__pycache__/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment (enthält Tokens)
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# Temp
+tmp/
+*.tmp

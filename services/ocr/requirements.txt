@@ -1,0 +1,17 @@
+# OCR Service Dependencies
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# OCR Engine
+surya-ocr==0.8.*
+marker-pdf==1.*
+
+# PDF Handling
+pymupdf==1.*
+
+# Utilities
+loguru==0.7.*
+aiofiles==24.*
+numpy>=1.26
+Pillow>=10.0

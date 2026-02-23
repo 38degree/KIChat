@@ -1,0 +1,16 @@
+# Denoiser Service Dependencies
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# Audio Enhancement
+resemble-enhance==0.0.*
+
+# Audio Processing
+soundfile==0.13.*
+numpy>=1.26
+torch>=2.5
+torchaudio>=2.5
+
+# Utilities
+loguru==0.7.*

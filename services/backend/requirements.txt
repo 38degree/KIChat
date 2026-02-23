@@ -1,0 +1,36 @@
+# Backend — Python Dependencies
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+httpx==0.28.*
+python-multipart==0.0.*
+pydantic==2.*
+pydantic-settings==2.*
+
+# Embedding
+sentence-transformers==3.*
+torch>=2.5
+
+# Whisper STT
+faster-whisper==1.*
+openai-whisper==20240930
+
+# RAG / Text Processing
+langchain==0.3.*
+langchain-community==0.3.*
+langchain-text-splitters==0.3.*
+qdrant-client==1.*
+
+# Audio
+soundfile==0.13.*
+librosa==0.10.*
+pydub==0.25.*
+numpy>=1.26
+
+# PDF Parsing (lightweight — heavy OCR in separate service)
+pymupdf==1.*
+
+# Utilities
+python-dotenv==1.*
+loguru==0.7.*
+aiofiles==24.*
+tenacity==9.*

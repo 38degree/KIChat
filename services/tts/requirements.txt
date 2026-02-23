@@ -1,0 +1,25 @@
+# TTS Service Dependencies
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+
+# Build Tools (must be first)
+wheel>=0.42
+setuptools>=70
+
+# PyTorch (pre-built wheels to avoid compilation)
+torch>=2.5
+torchaudio>=2.5
+
+# Coqui TTS (XTTS-v2)
+TTS==0.22.*
+
+# Audio
+soundfile==0.13.*
+numpy>=1.26
+scipy>=1.11
+
+# Utilities
+loguru==0.7.*
+aiofiles==24.*
+tqdm>=4.66
